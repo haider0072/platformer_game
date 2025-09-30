@@ -92,8 +92,12 @@
         const player = {
             x: 50,
             y: 400,
-            width: 50,
-            height: 60,
+            width: 120,  // Visual width for sprite rendering
+            height: 120, // Visual height for sprite rendering
+            collisionWidth: 50,  // Actual hitbox width (smaller for better gameplay)
+            collisionHeight: 90, // Actual hitbox height
+            collisionOffsetX: 35, // Center the hitbox on the sprite
+            collisionOffsetY: 20, // Offset from top
             velocityY: 0,
             velocityX: 0,
             speed: 3,
@@ -126,18 +130,22 @@
 
         // Sprite frame configurations (frames per sprite sheet)
         const spriteConfig = {
-            idle: { frames: 7, width: 128, height: 128 },
-            walk: { frames: 10, width: 128, height: 128 },
-            jump: { frames: 4, width: 128, height: 128 },
-            hurt: { frames: 2, width: 128, height: 128 }
+            idle: { frames: 7, width: 256, height: 256 },
+            walk: { frames: 10, width: 256, height: 256 },
+            jump: { frames: 9, width: 256, height: 256 },
+            hurt: { frames: 5, width: 256, height: 256 }
         };
 
         let spritesLoaded = 0;
         const totalSprites = 4;
 
-        Object.values(sprites).forEach(sprite => {
-            sprite.onload = () => {
+        Object.keys(sprites).forEach(key => {
+            sprites[key].onload = () => {
                 spritesLoaded++;
+                console.log(`Loaded ${key} sprite (${spritesLoaded}/${totalSprites})`);
+            };
+            sprites[key].onerror = (e) => {
+                console.error(`Failed to load ${key} sprite:`, sprites[key].src);
             };
         });
 
@@ -196,13 +204,12 @@
 
         // Draw player (girl character with sprites)
         function drawPlayer() {
-            if (player.invincible && Math.floor(Date.now() / 100) % 2 === 0) {
-                return; // Flashing effect when invincible
-            }
+            // Always draw placeholder or sprite (remove flashing hide effect during invincibility)
+            const isFlashing = player.invincible && Math.floor(Date.now() / 100) % 2 === 0;
 
             if (spritesLoaded < totalSprites) {
                 // Draw placeholder if sprites not loaded
-                ctx.fillStyle = '#FF69B4';
+                ctx.fillStyle = isFlashing ? 'rgba(255, 105, 180, 0.5)' : '#FF69B4';
                 ctx.fillRect(player.x, player.y, player.width, player.height);
                 return;
             }
@@ -236,6 +243,11 @@
 
             // Save context for flipping
             ctx.save();
+
+            // Apply transparency if flashing
+            if (isFlashing) {
+                ctx.globalAlpha = 0.5;
+            }
 
             // Flip sprite based on direction
             if (!player.facingRight) {
@@ -359,15 +371,18 @@
             if (player.x < 0) player.x = 0;
             if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-            // Platform collision
+            // Platform collision (using collision box)
             player.onGround = false;
+            const collisionX = player.x + player.collisionOffsetX;
+            const collisionY = player.y + player.collisionOffsetY;
+
             platforms.forEach(platform => {
-                if (player.x + player.width > platform.x &&
-                    player.x < platform.x + platform.width &&
-                    player.y + player.height > platform.y &&
-                    player.y + player.height < platform.y + platform.height &&
+                if (collisionX + player.collisionWidth > platform.x &&
+                    collisionX < platform.x + platform.width &&
+                    collisionY + player.collisionHeight > platform.y &&
+                    collisionY + player.collisionHeight < platform.y + platform.height &&
                     player.velocityY >= 0) {
-                    player.y = platform.y - player.height;
+                    player.y = platform.y - player.collisionHeight - player.collisionOffsetY;
                     player.velocityY = 0;
                     player.onGround = true;
                 }
@@ -389,18 +404,21 @@
 
         // Update enemies
         function updateEnemies() {
+            const collisionX = player.x + player.collisionOffsetX;
+            const collisionY = player.y + player.collisionOffsetY;
+
             enemies.forEach(enemy => {
                 enemy.x += enemy.speed * enemy.direction;
                 if (enemy.x >= enemy.endX || enemy.x <= enemy.startX) {
                     enemy.direction *= -1;
                 }
 
-                // Collision with player
+                // Collision with player (using collision box)
                 if (!player.invincible &&
-                    player.x + player.width > enemy.x &&
-                    player.x < enemy.x + enemy.width &&
-                    player.y + player.height > enemy.y &&
-                    player.y < enemy.y + enemy.height) {
+                    collisionX + player.collisionWidth > enemy.x &&
+                    collisionX < enemy.x + enemy.width &&
+                    collisionY + player.collisionHeight > enemy.y &&
+                    collisionY < enemy.y + enemy.height) {
                     loseLife();
                 }
             });
@@ -408,12 +426,15 @@
 
         // Check obstacle collision
         function checkObstacles() {
+            const collisionX = player.x + player.collisionOffsetX;
+            const collisionY = player.y + player.collisionOffsetY;
+
             obstacles.forEach(obstacle => {
                 if (!player.invincible &&
-                    player.x + player.width > obstacle.x &&
-                    player.x < obstacle.x + obstacle.width &&
-                    player.y + player.height > obstacle.y &&
-                    player.y < obstacle.y + obstacle.height) {
+                    collisionX + player.collisionWidth > obstacle.x &&
+                    collisionX < obstacle.x + obstacle.width &&
+                    collisionY + player.collisionHeight > obstacle.y &&
+                    collisionY < obstacle.y + obstacle.height) {
                     loseLife();
                 }
             });
@@ -421,13 +442,18 @@
 
         // Check coin collection
         function checkCoins() {
+            const collisionX = player.x + player.collisionOffsetX;
+            const collisionY = player.y + player.collisionOffsetY;
+
             coins.forEach(coin => {
                 if (!coin.collected) {
+                    const playerCenterX = collisionX + player.collisionWidth / 2;
+                    const playerCenterY = collisionY + player.collisionHeight / 2;
                     const distance = Math.sqrt(
-                        Math.pow(player.x + player.width / 2 - coin.x, 2) +
-                        Math.pow(player.y + player.height / 2 - coin.y, 2)
+                        Math.pow(playerCenterX - coin.x, 2) +
+                        Math.pow(playerCenterY - coin.y, 2)
                     );
-                    if (distance < coin.size + player.width / 2) {
+                    if (distance < coin.size + player.collisionWidth / 2) {
                         coin.collected = true;
                         score += 100;
                         updateScore();
@@ -439,10 +465,13 @@
 
         // Check goal
         function checkGoal() {
-            if (player.x + player.width > goal.x &&
-                player.x < goal.x + goal.width &&
-                player.y + player.height > goal.y &&
-                player.y < goal.y + goal.height) {
+            const collisionX = player.x + player.collisionOffsetX;
+            const collisionY = player.y + player.collisionOffsetY;
+
+            if (collisionX + player.collisionWidth > goal.x &&
+                collisionX < goal.x + goal.width &&
+                collisionY + player.collisionHeight > goal.y &&
+                collisionY < goal.y + goal.height) {
                 gameWon = true;
                 gameOver = true;
                 playWinSound();
